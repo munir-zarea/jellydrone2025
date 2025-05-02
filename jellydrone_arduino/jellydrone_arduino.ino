@@ -1,91 +1,116 @@
-#include <Wire.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <Servo.h>
 
-// —— Configuration —— 
-static const int SERVO_PINS[5] = {3, 5, 6, 9, 10};
-static const int MOVE_SPEED   = 1;      // degrees per step
-static const unsigned long SERVO_DT  = 20;  // ms between servo updates (~50 Hz)
-static const unsigned long IMU_DT    = 5;   // ms between IMU prints (~200 Hz)
+// Servo setup
+Servo servo1, servo2, servo3, servo4, servo5;
+const uint8_t SERVO1_PIN = 3;
+const uint8_t SERVO2_PIN = 5;
+const uint8_t SERVO3_PIN = 6;
+const uint8_t SERVO4_PIN = 9;
+const uint8_t SERVO5_PIN = 10;
 
-Adafruit_MPU6050 mpu;
-Servo        servos[5];
+int pos1 = 90, pos2 = 90, pos3 = 90, pos4 = 90, pos5 = 90;
+int target1 = 90, target2 = 90, target3 = 90, target4 = 90, target5 = 90;
 
-// state
-int          positions[5]    = {90, 90, 90, 90, 90};
-int          deltas[5]       = { 0,  0,  0,  0,  0};
-unsigned long last_servo_time = 0;
-unsigned long last_imu_time   = 0;
+bool allForward = false;
+bool allReverse = false;
+
+unsigned long lastMoveTime = 0;
+const unsigned long MOVE_INTERVAL = 20;  // ms
+const int STEP_SIZE = 1;
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) { delay(1); }
+  while (!Serial);
 
-  // Attach and center servos
-  for (int i = 0; i < 5; i++) {
-    servos[i].attach(SERVO_PINS[i]);
-    servos[i].write(positions[i]);
-  }
+  servo1.attach(SERVO1_PIN);
+  servo2.attach(SERVO2_PIN);
+  servo3.attach(SERVO3_PIN);
+  servo4.attach(SERVO4_PIN);
+  servo5.attach(SERVO5_PIN);
 
-  // Init IMU
-  Wire.begin();
-  if (!mpu.begin()) {
-    Serial.println("MPU6050 not found! Halting.");
-    while (1) { delay(1000); }
-  }
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
-  delay(500);
+  servo1.write(pos1);
+  servo2.write(pos2);
+  servo3.write(pos3);
+  servo4.write(pos4);
+  servo5.write(pos5);
 
-  Serial.println("Arduino ready");
+  Serial.println("Servo controller ready.");
 }
 
 void loop() {
-  unsigned long now = millis();
-
-  // 1) Read any new servo commands
-  if (Serial.available() > 0) {
+  // 1) Read incoming command
+  if (Serial.available()) {
     String line = Serial.readStringUntil('\n');
     line.trim();
 
-    int s1, s2, s3, s4, s5;
-    if (sscanf(line.c_str(), "%d,%d,%d,%d,%d", &s1, &s2, &s3, &s4, &s5) == 5) {
-      deltas[0] = s1;
-      deltas[1] = s2;
-      deltas[2] = s3;
-      deltas[3] = s4;
-      deltas[4] = s5;
+    if (line.startsWith("SET:")) {
+      int a1,a2,a3,a4,a5;
+      if (sscanf(line.c_str()+4, "%d,%d,%d,%d,%d",
+                 &a1,&a2,&a3,&a4,&a5) == 5) {
+        target1 = constrain(a1,0,180);
+        target2 = constrain(a2,0,180);
+        target3 = constrain(a3,0,180);
+        target4 = constrain(a4,0,180);
+        target5 = constrain(a5,0,180);
+        allForward = allReverse = false;
+      }
+    }
+    else if (line == "ALLFWD") {
+      allForward = true;
+      allReverse = false;
+    }
+    else if (line == "ALLREV") {
+      allForward = false;
+      allReverse = true;
+    }
+    else if (line == "STOP") {
+      // clear drive flags
+      allForward = false;
+      allReverse = false;
+      // freeze targets here:
+      target1 = pos1;
+      target2 = pos2;
+      target3 = pos3;
+      target4 = pos4;
+      target5 = pos5;
     }
   }
 
-  // 2) Step servos every SERVO_DT ms
-  if (now - last_servo_time >= SERVO_DT) {
-    for (int i = 0; i < 5; i++) {
-      positions[i] = constrain(positions[i] + deltas[i] * MOVE_SPEED, 0, 180);
-      servos[i].write(positions[i]);
-    }
-    last_servo_time = now;
+  // 2) If still in ALLFWD/ALLREV, update targets
+  if (allForward) {
+    target1 = constrain(target1 + STEP_SIZE, 0, 180);
+    target2 = constrain(target2 + STEP_SIZE, 0, 180);
+    target3 = constrain(target3 + STEP_SIZE, 0, 180);
+    target4 = constrain(target4 + STEP_SIZE, 0, 180);
+  }
+  else if (allReverse) {
+    target1 = constrain(target1 - STEP_SIZE, 0, 180);
+    target2 = constrain(target2 - STEP_SIZE, 0, 180);
+    target3 = constrain(target3 - STEP_SIZE, 0, 180);
+    target4 = constrain(target4 - STEP_SIZE, 0, 180);
   }
 
-  // 3) Publish IMU data every IMU_DT ms
-  if (now - last_imu_time >= IMU_DT) {
-    sensors_event_t accel, gyro, temp;
-    mpu.getEvent(&accel, &gyro, &temp);
+  // 3) Smoothly step toward targets
+  unsigned long now = millis();
+  if (now - lastMoveTime >= MOVE_INTERVAL) {
+    pos1 = stepToward(pos1, target1);
+    pos2 = stepToward(pos2, target2);
+    pos3 = stepToward(pos3, target3);
+    pos4 = stepToward(pos4, target4);
+    pos5 = stepToward(pos5, target5);
 
-    // Prefix “IMU:” so your serial_bridge picks it up
-    Serial.print("IMU:");
-    Serial.print(accel.acceleration.x, 2); Serial.print(',');
-    Serial.print(accel.acceleration.y, 2); Serial.print(',');
-    Serial.print(accel.acceleration.z, 2); Serial.print(',');
-    Serial.print(gyro.gyro.x,         2); Serial.print(',');
-    Serial.print(gyro.gyro.y,         2); Serial.print(',');
-    Serial.println(gyro.gyro.z,       2);
+    servo1.write(pos1);
+    servo2.write(pos2);
+    servo3.write(pos3);
+    servo4.write(pos4);
+    servo5.write(pos5);
 
-    last_imu_time = now;
+    lastMoveTime = now;
   }
+}
 
-  // tiny yield
-  delay(1);
+int stepToward(int current, int target) {
+  if (current < target) return min(current + STEP_SIZE, target);
+  if (current > target) return max(current - STEP_SIZE, target);
+  return current;
 }
