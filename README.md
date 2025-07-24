@@ -36,7 +36,8 @@ ros2 launch jellydrone jellydrone.launch.py
 
 ### Terminal 2: Run IMU Filter Node
 
-```cd ~/jellydrone_ws
+```bash
+cd ~/jellydrone_ws
 ros2 run imu_filter_madgwick imu_filter_madgwick_node \
   --ros-args \
   -p use_mag:=false \
@@ -47,7 +48,8 @@ ros2 run imu_filter_madgwick imu_filter_madgwick_node \
 
 ### Terminal 3: Launch RViz
 
-```cd ~/jellydrone_ws
+```bash
+cd ~/jellydrone_ws
 rviz2
 
 ```
