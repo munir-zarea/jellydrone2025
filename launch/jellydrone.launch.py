@@ -3,7 +3,7 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
-        # Joystick driver node
+        # 1) Joystick driver
         Node(
             package='joy',
             executable='joy_node',
@@ -16,27 +16,35 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Joystick to servo command converter (publishes std_msgs/String)
+        # 2) Joystick-to-servo control
         Node(
             package='jellydrone',
             executable='joystick_servo_control',
             name='joystick_servo_control',
-            parameters=[{
-                'port': '/dev/ttyACM0',
-                'baudrate': 115200
-                }],
             output='screen'
         ),
 
-        # Serial bridge: sends commands & publishes IMU
+        # 3) Serial bridge to Arduino
         Node(
             package='jellydrone',
             executable='serial_bridge',
             name='serial_bridge',
             parameters=[{
-                'port': '/dev/ttyACM0',     # ✅ Set this correctly!
+                'port': '/dev/ttyACM0',
                 'baudrate': 115200
             }],
             output='screen'
         ),
+        # 4) Camera feed publisher
+        Node(
+            package='jellydrone',
+            executable='camera_node',
+            name='camera_node',
+            parameters=[{
+                'camera_index': 4  # U20CAM-720P is at /dev/video4
+            }],
+            output='screen'
+        ),
+
+
     ])
