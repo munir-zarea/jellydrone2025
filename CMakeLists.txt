@@ -10,8 +10,12 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)  # already here, good
+find_package(sensor_msgs REQUIRED)
 find_package(serial REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(image_transport REQUIRED)
+
 
 # External static serial library
 add_library(serial_lib STATIC IMPORTED)
@@ -33,8 +37,8 @@ target_link_libraries(serial_bridge
 )
 ament_target_dependencies(serial_bridge
   rclcpp
-  std_msgs         # <<--- ADD THIS
-  sensor_msgs      # <<--- ADD THIS
+  std_msgs
+  sensor_msgs
   geometry_msgs
 )
 
@@ -55,7 +59,7 @@ target_link_libraries(joystick_servo_control
 )
 ament_target_dependencies(joystick_servo_control
   rclcpp
-  std_msgs          # <<--- ADD THIS
+  std_msgs
   geometry_msgs
   sensor_msgs
 )
@@ -81,6 +85,25 @@ ament_target_dependencies(imu_serial_publisher_node
 )
 
 install(TARGETS imu_serial_publisher_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# ================================
+# Executable: camera_node
+# ================================
+add_executable(camera_node src/camera_node.cpp)
+target_link_libraries(camera_node
+  ${OpenCV_LIBS}
+)
+ament_target_dependencies(camera_node
+  rclcpp
+  sensor_msgs
+  cv_bridge
+  image_transport
+  OpenCV
+)
+
+install(TARGETS camera_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
