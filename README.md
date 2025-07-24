@@ -32,16 +32,22 @@ colcon build
 source install/setup.bash
 ros2 launch jellydrone jellydrone.launch.py
 
+```
+
 ### Terminal 2: Run IMU Filter Node
 
-cd ~/jellydrone_ws
+```cd ~/jellydrone_ws
 ros2 run imu_filter_madgwick imu_filter_madgwick_node \
   --ros-args \
   -p use_mag:=false \
   -r imu/data_raw:=/imu/data_raw \
   -r imu/data:=/imu/data_filtered
 
+```
+
 ### Terminal 3: Launch RViz
 
-cd ~/jellydrone_ws
+```cd ~/jellydrone_ws
 rviz2
+
+```
