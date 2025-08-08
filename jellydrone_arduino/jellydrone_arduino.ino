@@ -10,8 +10,8 @@ const uint8_t SERVO3_PIN = 6;
 const uint8_t SERVO4_PIN = 9;
 const uint8_t SERVO5_PIN = 10;
 
-int pos1 = 40, pos2 = 40, pos3 = 40, pos4 = 40, pos5 = 40;
-int target1 = 40, target2 = 40, target3 = 40, target4 = 40, target5 = 40;
+int pos1 = 135, pos2 = 135, pos3 = 135, pos4 = 135, pos5 = 135;
+int target1 = 135, target2 = 135, target3 = 135, target4 = 135, target5 = 135;
 
 bool allForward = false;
 bool allReverse = false;
@@ -63,6 +63,7 @@ void setup() {
   Serial.println("Servo controller ready.");
 }
 
+
 void loop() {
   // 1) Handle incoming command
   if (Serial.available()) {
@@ -110,15 +111,15 @@ void loop() {
 
   // 2) Update targets if in ALLFWD or ALLREV
   if (allForward) {
-    target1 = constrain(target1 + STEP_SIZE, 0, 180);
-    target2 = constrain(target2 + STEP_SIZE, 0, 180);
-    target3 = constrain(target3 + STEP_SIZE, 0, 180);
-    target4 = constrain(target4 + STEP_SIZE, 0, 180);
+    target1 = constrain(target1 + STEP_SIZE, 0, 270);
+    target2 = constrain(target2 + STEP_SIZE, 0, 270);
+    target3 = constrain(target3 + STEP_SIZE, 0, 270);
+    target4 = constrain(target4 + STEP_SIZE, 0, 270);
   } else if (allReverse) {
-    target1 = constrain(target1 - STEP_SIZE, 0, 180);
-    target2 = constrain(target2 - STEP_SIZE, 0, 180);
-    target3 = constrain(target3 - STEP_SIZE, 0, 180);
-    target4 = constrain(target4 - STEP_SIZE, 0, 180);
+    target1 = constrain(target1 - STEP_SIZE, 0, 270);
+    target2 = constrain(target2 - STEP_SIZE, 0, 270);
+    target3 = constrain(target3 - STEP_SIZE, 0, 270);
+    target4 = constrain(target4 - STEP_SIZE, 0, 270);
   }
 
   // 3) Smooth movement
