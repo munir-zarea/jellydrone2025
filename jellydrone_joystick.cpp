@@ -1,20 +1,20 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/string.hpp>
-#include <sstream>
+#include <chrono>
 #include <algorithm>
 #include <cmath>
+
+using namespace std::chrono_literals;
 
 class JoystickServoControl : public rclcpp::Node
 {
 public:
   JoystickServoControl()
   : Node("joystick_servo_control"),
+    base_pos_(DEFAULT_POS), // Start the "goal post" at 90 degrees
     servo5_last_(DEFAULT_POS)
   {
-    for (int i = 0; i < 4; ++i)
-      last_set_[i] = DEFAULT_POS;
-
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "joy", 10,
       std::bind(&JoystickServoControl::joyCallback, this, std::placeholders::_1));
@@ -22,81 +22,94 @@ public:
     servo_pub_ = create_publisher<std_msgs::msg::String>("servo_commands", 10);
 
     timer_ = create_wall_timer(
-      std::chrono::milliseconds(20),
+      20ms,
       std::bind(&JoystickServoControl::publishCommand, this));
 
-    RCLCPP_INFO(get_logger(), "Joystick servo control running (0–270° range)");
+    RCLCPP_INFO(get_logger(), "Joystick servo control running");
   }
 
 private:
-  void joyCallback(sensor_msgs::msg::Joy::SharedPtr msg)
+  void joyCallback(const sensor_msgs::msg::Joy::SharedPtr msg)
   {
-    last_joy_ = std::move(msg);
+    last_joy_ = msg;
   }
 
   void publishCommand()
   {
-    if (!last_joy_ || last_joy_->axes.size() < 2) return;
+    if (!last_joy_ || last_joy_->axes.size() < 6) return;
 
-    float x = last_joy_->axes[0];  // left stick X
-    float y = -last_joy_->axes[1]; // left stick Y
+    // Adjust the base_pos_ when LB/RB held
+    bool lb = last_joy_->buttons.size() > 4 && last_joy_->buttons[4];
+    bool rb = last_joy_->buttons.size() > 5 && last_joy_->buttons[5];
+    if (lb) {
+      base_pos_ = std::min(base_pos_ + BASE_STEP, SERVO_MAX);
+    } else if (rb) {
+      base_pos_ = std::max(base_pos_ - BASE_STEP, SERVO_MIN);
+    }
+    
+    // If neither rb or lb is held, base_pos_ stays where it was.
 
-    float x_gain = 40.0f;  // expand full stick to ±135° from center
-    float y_gain = 40.0f;
+    // READ AND DEADZONE STICKS
+    float x = last_joy_->axes[0];      // ←: –1 … →: +1
+    float y = -last_joy_->axes[1];     // ↑: +1 … ↓: –1
 
-    float cross_boost = -0.5f;     // Boost to perpendicular pouches
-    float deflate_gain = 1.3f;    // Amplified deflation on opposite pouch
+    constexpr float deadzone = 0.1f;
+    if (std::abs(x) < deadzone) x = 0.0f;
+    if (std::abs(y) < deadzone) y = 0.0f;
 
-    int s1 = DEFAULT_POS + x * x_gain                                  // X inflation
-           + std::abs(y) * y_gain * cross_boost;                   // Y-axis boost
+    // INITIALIZE ALL POUCHES TO MIDPOINT AND CARRY OVER SERVO 5
+    int s[5] = {
+      base_pos_,   // pouch 1 (servo1)
+      base_pos_,   // pouch 2 (servo2)
+      base_pos_,   // pouch 3 (servo3)
+      base_pos_,   // pouch 4 (servo4)
+      servo5_last_   // propulsion (servo5)
+    };
 
-    int s3 = DEFAULT_POS - x * x_gain * deflate_gain                   // X opposite deflation (amplified)
-           + std::abs(y) * y_gain * cross_boost;                   // Y-axis boost
+    // APPLY STICK OFFSETS AROUND NEW CENTER
+    s[0] = std::clamp(int(base_pos_ + x * GAIN), SERVO_MIN, SERVO_MAX); // servo 1
+    s[2] = std::clamp(int(base_pos_ - x * GAIN), SERVO_MIN, SERVO_MAX); // servo 3
+    s[1] = std::clamp(int(base_pos_ + y * GAIN), SERVO_MIN, SERVO_MAX); // servo 2
+    s[3] = std::clamp(int(base_pos_ - y * GAIN), SERVO_MIN, SERVO_MAX); // servo 4
 
-    int s2 = DEFAULT_POS + y * y_gain                                  // Y inflation
-           + std::abs(x) * x_gain * cross_boost;                   // X-axis boost
-
-    int s4 = DEFAULT_POS - y * y_gain * deflate_gain                   // Y opposite deflation (amplified)
-           + std::abs(x) * x_gain * cross_boost;                   // X-axis boost
-
-
-    last_set_[0] = std::clamp(s1, 0, 270);
-    last_set_[1] = std::clamp(s2, 0, 270);
-    last_set_[2] = std::clamp(s3, 0, 270);
-    last_set_[3] = std::clamp(s4, 0, 270);
-
-    // RT controls servo5: fast down, slow reset
-    float rt = (last_joy_->axes.size() > 5 ? last_joy_->axes[5] : 1.0f);
-    if (rt < RT_THRESHOLD)
+    // RT LOGIC FOR SERVO 5 (PROPULSION)
+    float rt = last_joy_->axes[5];
+    if (rt < RT_THRESHOLD) {
       servo5_last_ = std::max(servo5_last_ - FAST_STEP, SERVO5_MIN);
-    else if (servo5_last_ < DEFAULT_POS)
+    } else {
       servo5_last_ = std::min(servo5_last_ + STEP_SIZE, DEFAULT_POS);
+    }
+    s[4] = servo5_last_;
 
-    std::ostringstream oss;
-    oss << "SET:"
-        << last_set_[0] << ',' << last_set_[1] << ','
-        << last_set_[2] << ',' << last_set_[3] << ','
-        << servo5_last_;
 
-    auto msg = std_msgs::msg::String();
-    msg.data = oss.str();
-    servo_pub_->publish(msg);
+    // PUBLISH
+    std_msgs::msg::String out;
+    out.data = "SET:" +
+      std::to_string(s[0]) + ',' +
+      std::to_string(s[1]) + ',' +
+      std::to_string(s[2]) + ',' +
+      std::to_string(s[3]) + ',' +
+      std::to_string(s[4]);
+    servo_pub_->publish(out);
   }
 
-  // Constants
-  static constexpr int   STEP_SIZE     = 1;
-  static constexpr int   FAST_STEP     = 10;
-  static constexpr float RT_THRESHOLD  = 0.9f;
-  static constexpr int   DEFAULT_POS   = 40;  // midpoint of 0–270
-  static constexpr int   SERVO5_MIN    = 0;
-
-  int last_set_[4];
+  // CONSTANTS
+  static constexpr int   DEFAULT_POS = 135; // Neutral angle
+  static constexpr int   SERVO_MIN   = 0; // Minimum angle
+  static constexpr int   SERVO_MAX   = 270; // Maximum angle
+  static constexpr float GAIN        = 135.0f;  // How aggressively stick deflection is translated into angle offset. You'll move +-X degrees from current bas position
+  static constexpr int   BASE_STEP   = 1;      // Change base_pos_ by 1° each tick
+  static constexpr float RT_THRESHOLD= 0.9f; // Cuttoff on right trigger axis value
+  static constexpr int   FAST_STEP   = 10; // The amount you subtract from servo5_last
+  static constexpr int   STEP_SIZE   = 10; // The amount (in degrees) you subtract from servo5_last_ each tick
+  static constexpr int   SERVO5_MIN  = 0; // Lower limit for propulsion (servo 5)
+  
+  int base_pos_;
   int servo5_last_;
-  sensor_msgs::msg::Joy::SharedPtr last_joy_;
-
-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr servo_pub_;
-  rclcpp::TimerBase::SharedPtr timer_;
+  sensor_msgs::msg::Joy::SharedPtr              last_joy_;
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr   joy_sub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr      servo_pub_;
+  rclcpp::TimerBase::SharedPtr                             timer_;
 };
 
 int main(int argc, char **argv)
