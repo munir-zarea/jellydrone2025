@@ -24,7 +24,7 @@ public:
 
 private:
   // ====== Tuning constants ======
-  static constexpr int   DEFAULT_POS = 220;     // "original" angle to start each cycle from
+  static constexpr int   DEFAULT_POS = 150;     // "original" angle to start each cycle from
   static constexpr int   SERVO_MIN   = 0;
   static constexpr int   SERVO_MAX   = 270;
   static constexpr float GAIN        = 135.0f;  // stick gain for servos 1–4
@@ -43,7 +43,7 @@ private:
 
   // SAFE MIN for servo 5 to avoid mechanical hard-stop/buzzing
   static constexpr int   SERVO5_MIN_SAFE    = 2;    // raise if you hear buzzing at the extreme
-  static constexpr int   SERVO5_MAX_SAFE    = 268;   // adjust to your tested safe upper limit
+  static constexpr int   SERVO5_MAX_SAFE    = 270;   // adjust to your tested safe upper limit
 
   // Arduino motion model (must match your Arduino sketch)
   static constexpr int   ARD_STEP_DEG         = 18;  // MatchArduino STEP_SIZE_5 (deg per tick)
